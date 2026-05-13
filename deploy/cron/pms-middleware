@@ -1,0 +1,4 @@
+# Daily TV resync (FIAS fallback)
+# Copy to /etc/cron.d/pms-middleware  or  install per "crontab -e" as root
+0  11 * * * root /usr/bin/php /var/www/html/resync_cron.php --checkout >> /var/www/html/logs/resync_cron.log 2>&1
+30 11 * * * root /usr/bin/php /var/www/html/resync_cron.php --checkin  >> /var/www/html/logs/resync_cron.log 2>&1

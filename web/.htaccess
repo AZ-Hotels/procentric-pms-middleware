@@ -1,0 +1,21 @@
+# Config-Datei schuetzen
+<Files "config.json">
+    Require all denied
+</Files>
+
+# Alle JSON-Datendateien schuetzen
+<FilesMatch "\.(json|log|pid|flag)$">
+    Require all denied
+</FilesMatch>
+
+# PHP-Quellcode der internen Komponenten schuetzen
+<FilesMatch "^(fias_client|pms_router|resync|resync_lib|resync_cron)\.php$">
+    Require all denied
+</FilesMatch>
+
+# Data-Verzeichnis komplett sperren
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^data/ - [F,L]
+    RewriteRule ^logs/ - [F,L]
+</IfModule>

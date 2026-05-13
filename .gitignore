@@ -1,0 +1,20 @@
+# Local runtime state - never commit
+web/config.json
+web/data/*
+!web/data/.gitkeep
+web/logs/*
+!web/logs/.gitkeep
+*.pid
+*.flag
+*.log
+
+# Compiled SUID helper
+deploy/fias-ctl/fias-ctl
+
+# Editor / OS
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,53 @@
+{
+    "procentric": {
+        "host": "192.168.0.10",
+        "port": 60080,
+        "ssl": false,
+        "client_id": "CHANGEME",
+        "client_secret": "CHANGEME",
+        "api_prefix": "/api/pms/v2"
+    },
+    "fias": {
+        "host": "192.168.0.20",
+        "port": 5091,
+        "heartbeat_interval": 300,
+        "language_map": {
+            "EA": "en",
+            "GE": "de",
+            "FR": "fr",
+            "SP": "es",
+            "IT": "it",
+            "DU": "nl",
+            "PO": "pt",
+            "RU": "ru",
+            "CZ": "cs",
+            "JA": "ja",
+            "KO": "ko",
+            "CH": "zh",
+            "AR": "ar",
+            "TU": "tr",
+            "PL": "pl",
+            "HU": "hu",
+            "DA": "da",
+            "NO": "no",
+            "SW": "sv",
+            "FI": "fi"
+        }
+    },
+    "middleware": {
+        "listen_port": 80,
+        "log_max_entries": 500
+    },
+    "resync": {
+        "enabled": true,
+        "only_when_fias_down": true,
+        "checkout_hour": 3,
+        "checkout_minute": 0,
+        "checkin_hour": 3,
+        "checkin_minute": 5,
+        "rooms": [],
+        "pseudo_first_name": "Max",
+        "pseudo_last_name": "Mustermann",
+        "pseudo_language": "de"
+    }
+}

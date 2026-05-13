@@ -1,0 +1,16 @@
+[Unit]
+Description=FIAS TCP Client - Fidelio Opera PMS Interface
+After=network.target httpd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/php /var/www/html/fias_client.php
+Restart=on-failure
+RestartSec=30
+User=apache
+Group=apache
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
