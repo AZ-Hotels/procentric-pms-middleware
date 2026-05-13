@@ -183,8 +183,12 @@ if ($route === '/details' && $method === 'GET') {
 if (preg_match('#^/rooms/([^/]+)$#', $route, $m) && $method === 'GET') {
     $roomId = $m[1];
 
-    // Track rooms queried by PCS for auto-discovery (ignore non-room IDs like TV serials)
-    $isRealRoom = (bool) preg_match('/^\d{1,5}[A-Za-z]?$/', $roomId);
+    // Track rooms queried by PCS for auto-discovery
+    // Optional filter (default on): only accept IDs that look like room numbers
+    $filterEnabled = (loadConfig()['resync']['room_filter'] ?? true) !== false;
+    $isRealRoom = $filterEnabled
+        ? (bool) preg_match('/^\d{1,5}[A-Za-z]?$/', $roomId)
+        : true;
     $pcsRoomsFile = __DIR__ . '/data/pcs_discovered_rooms.json';
     $discovered = file_exists($pcsRoomsFile) ? (json_decode(file_get_contents($pcsRoomsFile), true) ?: []) : [];
     $now = time();

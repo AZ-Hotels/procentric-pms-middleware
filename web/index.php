@@ -967,25 +967,12 @@
                         </select>
                     </div>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Check-Out Stunde</label>
-                        <input type="number" id="cfg-resync-co-hour" min="0" max="23" placeholder="3">
-                    </div>
-                    <div class="form-group">
-                        <label>Check-Out Minute</label>
-                        <input type="number" id="cfg-resync-co-minute" min="0" max="59" placeholder="0">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Check-In Stunde</label>
-                        <input type="number" id="cfg-resync-ci-hour" min="0" max="23" placeholder="3">
-                    </div>
-                    <div class="form-group">
-                        <label>Check-In Minute</label>
-                        <input type="number" id="cfg-resync-ci-minute" min="0" max="59" placeholder="5">
-                    </div>
+                <div class="form-group">
+                    <label>Auto-Discovery Filter (nur Zimmernummern)</label>
+                    <select id="cfg-resync-roomfilter">
+                        <option value="1">Aktiv (nur 1-5 Ziffern + opt. Buchstabe)</option>
+                        <option value="0">Aus (alle PCS-IDs uebernehmen)</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>Zimmerliste (kommagetrennt)</label>
@@ -1240,10 +1227,7 @@ async function loadConfig() {
         const resync = cfg.resync || {};
         document.getElementById('cfg-resync-enabled').value = resync.enabled ? '1' : '0';
         document.getElementById('cfg-resync-fiasonly').value = (resync.only_when_fias_down !== false) ? '1' : '0';
-        document.getElementById('cfg-resync-co-hour').value = resync.checkout_hour ?? 3;
-        document.getElementById('cfg-resync-co-minute').value = resync.checkout_minute ?? 0;
-        document.getElementById('cfg-resync-ci-hour').value = resync.checkin_hour ?? 3;
-        document.getElementById('cfg-resync-ci-minute').value = resync.checkin_minute ?? 5;
+        document.getElementById('cfg-resync-roomfilter').value = (resync.room_filter !== false) ? '1' : '0';
         document.getElementById('cfg-resync-rooms').value = (resync.rooms || []).join(', ');
         document.getElementById('cfg-resync-fname').value = resync.pseudo_first_name || 'Max';
         document.getElementById('cfg-resync-lname').value = resync.pseudo_last_name || 'Mustermann';
@@ -1276,10 +1260,7 @@ async function saveConfig() {
         resync: {
             enabled: document.getElementById('cfg-resync-enabled').value === '1',
             only_when_fias_down: document.getElementById('cfg-resync-fiasonly').value === '1',
-            checkout_hour: parseInt(document.getElementById('cfg-resync-co-hour').value) || 3,
-            checkout_minute: parseInt(document.getElementById('cfg-resync-co-minute').value) || 0,
-            checkin_hour: parseInt(document.getElementById('cfg-resync-ci-hour').value) || 3,
-            checkin_minute: parseInt(document.getElementById('cfg-resync-ci-minute').value) || 5,
+            room_filter: document.getElementById('cfg-resync-roomfilter').value === '1',
             rooms: document.getElementById('cfg-resync-rooms').value.split(',').map(s => s.trim()).filter(Boolean),
             pseudo_first_name: document.getElementById('cfg-resync-fname').value || 'Max',
             pseudo_last_name: document.getElementById('cfg-resync-lname').value || 'Mustermann',

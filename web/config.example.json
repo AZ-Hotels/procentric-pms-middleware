@@ -41,13 +41,10 @@
     "resync": {
         "enabled": true,
         "only_when_fias_down": true,
-        "checkout_hour": 3,
-        "checkout_minute": 0,
-        "checkin_hour": 3,
-        "checkin_minute": 5,
         "rooms": [],
         "pseudo_first_name": "Max",
         "pseudo_last_name": "Mustermann",
-        "pseudo_language": "de"
+        "pseudo_language": "de",
+        "room_filter": true
     }
 }
