@@ -975,8 +975,19 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Zimmerliste (kommagetrennt)</label>
-                    <input type="text" id="cfg-resync-rooms" placeholder="139, 403, 555, 625, 666">
+                    <label>Zimmerliste</label>
+                    <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+                        <table class="lang-table">
+                            <thead><tr><th>Zimmer</th><th>Status</th><th>Sprache</th><th></th></tr></thead>
+                            <tbody id="roomsTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:8px;">
+                        <input type="text" id="newRoomNumber" placeholder="Zimmer" style="width:80px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;outline:none;">
+                        <button class="btn btn-secondary" onclick="addRoomRow()" style="font-size:11px;padding:4px 10px;text-transform:none;flex:1;">+ Hinzuf&uuml;gen</button>
+                        <button class="btn btn-secondary" onclick="refreshAllRoomStatuses()" id="roomStatusBtn" style="font-size:11px;padding:4px 10px;text-transform:none;flex:1;" title="Status &amp; Sprache aller Zimmer von PCS abrufen">&#x21bb; Status laden</button>
+                    </div>
+                    <div id="roomsCount" style="margin-top:6px;font-size:11px;color:var(--text-secondary);"></div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -1228,7 +1239,7 @@ async function loadConfig() {
         document.getElementById('cfg-resync-enabled').value = resync.enabled ? '1' : '0';
         document.getElementById('cfg-resync-fiasonly').value = (resync.only_when_fias_down !== false) ? '1' : '0';
         document.getElementById('cfg-resync-roomfilter').value = (resync.room_filter !== false) ? '1' : '0';
-        document.getElementById('cfg-resync-rooms').value = (resync.rooms || []).join(', ');
+        renderRoomsTable(resync.rooms || []);
         document.getElementById('cfg-resync-fname').value = resync.pseudo_first_name || 'Max';
         document.getElementById('cfg-resync-lname').value = resync.pseudo_last_name || 'Mustermann';
         document.getElementById('cfg-resync-lang').value = resync.pseudo_language || 'de';
@@ -1261,7 +1272,7 @@ async function saveConfig() {
             enabled: document.getElementById('cfg-resync-enabled').value === '1',
             only_when_fias_down: document.getElementById('cfg-resync-fiasonly').value === '1',
             room_filter: document.getElementById('cfg-resync-roomfilter').value === '1',
-            rooms: document.getElementById('cfg-resync-rooms').value.split(',').map(s => s.trim()).filter(Boolean),
+            rooms: getRoomsFromTable(),
             pseudo_first_name: document.getElementById('cfg-resync-fname').value || 'Max',
             pseudo_last_name: document.getElementById('cfg-resync-lname').value || 'Mustermann',
             pseudo_language: document.getElementById('cfg-resync-lang').value || 'de',
@@ -1414,6 +1425,111 @@ function addLangRow() {
     tbody.appendChild(tr);
     document.getElementById('newLangFias').value = '';
     document.getElementById('newLangPcs').value = '';
+}
+
+// --- Rooms Table ---
+function roomRowHtml(room) {
+    return `<td><input type="text" value="${escapeHtml(room)}" data-room-id style="width:80px;text-align:center;font-weight:600;"></td>
+        <td class="room-status" style="font-size:11px;color:var(--text-secondary);">&ndash;</td>
+        <td class="room-lang" style="font-size:11px;color:var(--text-secondary);">&ndash;</td>
+        <td><button class="del-btn" onclick="this.closest('tr').remove();updateRoomsCount();" title="Entfernen">x</button></td>`;
+}
+
+function renderRoomsTable(rooms) {
+    const tbody = document.getElementById('roomsTableBody');
+    rooms = (rooms || []).slice().sort((a, b) =>
+        String(a).localeCompare(String(b), undefined, {numeric: true, sensitivity: 'base'}));
+    let html = '';
+    rooms.forEach(room => {
+        html += `<tr>${roomRowHtml(room)}</tr>`;
+    });
+    tbody.innerHTML = html;
+    updateRoomsCount();
+}
+
+function getRoomsFromTable() {
+    const rooms = [];
+    document.querySelectorAll('#roomsTableBody tr').forEach(tr => {
+        const v = tr.querySelector('input[data-room-id]')?.value.trim();
+        if (v) rooms.push(v);
+    });
+    return rooms;
+}
+
+function updateRoomsCount() {
+    const n = document.querySelectorAll('#roomsTableBody tr').length;
+    const el = document.getElementById('roomsCount');
+    if (el) el.textContent = n + ' Zimmer in der Liste';
+}
+
+function addRoomRow() {
+    const room = document.getElementById('newRoomNumber').value.trim();
+    if (!room) return;
+    // Dedupe
+    const existing = getRoomsFromTable();
+    if (existing.includes(room)) {
+        document.getElementById('newRoomNumber').value = '';
+        return;
+    }
+    const tbody = document.getElementById('roomsTableBody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = roomRowHtml(room);
+    tbody.appendChild(tr);
+    document.getElementById('newRoomNumber').value = '';
+    updateRoomsCount();
+    fetchRoomStatus(room, tr);
+}
+
+async function fetchRoomStatus(room, tr) {
+    const statusCell = tr.querySelector('.room-status');
+    const langCell = tr.querySelector('.room-lang');
+    try {
+        const result = await apiCall('room_status&room=' + encodeURIComponent(room));
+        if (result.success && result.data) {
+            const guests = result.data.guests || [];
+            if (guests.length > 0) {
+                statusCell.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">Eingecheckt</span>';
+                const langs = [...new Set(guests.map(g => g.language || '-').filter(Boolean))];
+                langCell.textContent = langs.join(', ') || '-';
+            } else {
+                statusCell.innerHTML = '<span style="color:var(--text-secondary);">Frei</span>';
+                langCell.textContent = '-';
+            }
+        } else {
+            statusCell.innerHTML = '<span style="color:var(--accent-orange);">?</span>';
+            langCell.textContent = '-';
+        }
+    } catch (e) {
+        statusCell.innerHTML = '<span style="color:var(--accent-red);">Fehler</span>';
+        langCell.textContent = '-';
+    }
+}
+
+async function refreshAllRoomStatuses() {
+    const btn = document.getElementById('roomStatusBtn');
+    const rows = [...document.querySelectorAll('#roomsTableBody tr')];
+    if (!rows.length) return;
+    const total = rows.length;
+    let done = 0;
+    btn.disabled = true;
+    const origLabel = btn.innerHTML;
+    const updateBtn = () => { btn.innerHTML = `Lade ${done}/${total}…`; };
+    updateBtn();
+
+    // Concurrency-Limit, damit PCS nicht zu fluten
+    const queue = rows.slice();
+    const workers = Array(6).fill(null).map(async () => {
+        while (queue.length) {
+            const tr = queue.shift();
+            const room = tr.querySelector('input[data-room-id]')?.value.trim();
+            if (room) await fetchRoomStatus(room, tr);
+            done++;
+            updateBtn();
+        }
+    });
+    await Promise.all(workers);
+    btn.innerHTML = origLabel;
+    btn.disabled = false;
 }
 
 // --- FIAS DB-Swap ---
