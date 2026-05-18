@@ -61,6 +61,9 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 150;
         }
 
         .header h1 {
