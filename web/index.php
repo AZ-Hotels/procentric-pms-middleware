@@ -105,7 +105,7 @@
             background: var(--bg-secondary);
             border-right: 1px solid var(--border);
             overflow-y: auto;
-            padding: 24px;
+            padding: 24px 24px 80px 24px;
         }
 
         .tab-bar {
