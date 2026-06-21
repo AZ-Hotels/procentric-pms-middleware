@@ -970,6 +970,16 @@
                         </select>
                     </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Check-Out Uhrzeit</label>
+                        <input type="time" id="cfg-resync-checkout-time" value="11:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Check-In Uhrzeit</label>
+                        <input type="time" id="cfg-resync-checkin-time" value="11:30">
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>Auto-Discovery Filter (nur Zimmernummern)</label>
                     <select id="cfg-resync-roomfilter">
@@ -1241,6 +1251,8 @@ async function loadConfig() {
         const resync = cfg.resync || {};
         document.getElementById('cfg-resync-enabled').value = resync.enabled ? '1' : '0';
         document.getElementById('cfg-resync-fiasonly').value = (resync.only_when_fias_down !== false) ? '1' : '0';
+        document.getElementById('cfg-resync-checkout-time').value = resync.checkout_time || '11:00';
+        document.getElementById('cfg-resync-checkin-time').value = resync.checkin_time || '11:30';
         document.getElementById('cfg-resync-roomfilter').value = (resync.room_filter !== false) ? '1' : '0';
         renderRoomsTable(resync.rooms || []);
         document.getElementById('cfg-resync-fname').value = resync.pseudo_first_name || 'Max';
@@ -1274,6 +1286,8 @@ async function saveConfig() {
         resync: {
             enabled: document.getElementById('cfg-resync-enabled').value === '1',
             only_when_fias_down: document.getElementById('cfg-resync-fiasonly').value === '1',
+            checkout_time: document.getElementById('cfg-resync-checkout-time').value || '11:00',
+            checkin_time: document.getElementById('cfg-resync-checkin-time').value || '11:30',
             room_filter: document.getElementById('cfg-resync-roomfilter').value === '1',
             rooms: getRoomsFromTable(),
             pseudo_first_name: document.getElementById('cfg-resync-fname').value || 'Max',

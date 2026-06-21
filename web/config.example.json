@@ -41,6 +41,8 @@
     "resync": {
         "enabled": true,
         "only_when_fias_down": true,
+        "checkout_time": "11:00",
+        "checkin_time": "11:30",
         "rooms": [],
         "pseudo_first_name": "Max",
         "pseudo_last_name": "Mustermann",

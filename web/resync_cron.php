@@ -12,6 +12,27 @@ $action = $argv[1] ?? '';
 $config = resync_loadConfig();
 $resyncConfig = $config['resync'] ?? [];
 
+if ($action === '--checkout') {
+    $configuredTime = $resyncConfig['checkout_time'] ?? '11:00';
+} elseif ($action === '--checkin') {
+    $configuredTime = $resyncConfig['checkin_time'] ?? '11:30';
+} else {
+    echo "Usage: php resync_cron.php --checkout|--checkin\n";
+    exit(1);
+}
+
+// Cron runs every minute; only proceed at the configured HH:MM.
+// Accept --force to bypass (manual runs).
+$force = in_array('--force', $argv, true);
+if (!$force) {
+    if (!preg_match('/^\d{2}:\d{2}$/', $configuredTime)) {
+        exit(0);
+    }
+    if (date('H:i') !== $configuredTime) {
+        exit(0);
+    }
+}
+
 if (!($resyncConfig['enabled'] ?? false)) {
     echo "Resync deaktiviert\n";
     exit(0);
@@ -30,11 +51,8 @@ if ($resyncConfig['only_when_fias_down'] ?? true) {
 
 if ($action === '--checkout') {
     $result = resync_checkout_all();
-} elseif ($action === '--checkin') {
-    $result = resync_checkin_all();
 } else {
-    echo "Usage: php resync_cron.php --checkout|--checkin\n";
-    exit(1);
+    $result = resync_checkin_all();
 }
 
 echo json_encode($result, JSON_PRETTY_PRINT) . "\n";
