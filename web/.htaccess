@@ -9,7 +9,7 @@
 </FilesMatch>
 
 # PHP-Quellcode der internen Komponenten schuetzen
-<FilesMatch "^(fias_client|pms_router|resync|resync_lib|resync_cron)\.php$">
+<FilesMatch "^(fias_client|pms_router|resync|resync_lib|resync_cron|ip_guard)\.php$">
     Require all denied
 </FilesMatch>
 

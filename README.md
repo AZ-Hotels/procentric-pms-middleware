@@ -45,6 +45,22 @@ Sie nimmt Check-In/Check-Out- und Gastdaten-Events von Opera entgegen, leitet si
 
 ## Installation
 
+### Schnellinstallation (Rocky Linux 10 Minimal)
+
+Fuer ein frisch installiertes Rocky-Linux-10-Minimal-System erledigt die
+Installationsroutine alle folgenden Schritte automatisch (Pakete, Web-Dateien,
+Apache-VHosts, SUID-Helfer, FIAS-Daemon, Cron, Firewall, SELinux) - idempotent
+und ohne vorhandene `config.json` zu ueberschreiben:
+
+```bash
+cd /root/procentric-pms-middleware   # lokale Repo-Quelle auf diesem System
+sudo bash deploy/install.sh
+```
+
+Danach die GUI auf `http://<server>/` oeffnen und unter **Einstellungen**
+konfigurieren (Schritt 7). Die Einzelschritte unten dokumentieren, was das
+Skript im Detail tut, und dienen der manuellen Installation/Fehlersuche.
+
 ### 1. Pakete
 
 ```bash
@@ -69,15 +85,27 @@ sudo chown apache:apache /var/www/html/data /var/www/html/logs
 ```bash
 sudo cp deploy/apache/pms-middleware.conf  /etc/httpd/conf.d/
 sudo cp deploy/apache/port80-restrict.conf /etc/httpd/conf.d/
+sudo cp deploy/apache/pms-listen.conf      /etc/httpd/conf.d/
 ```
 
-`port80-restrict.conf` enthaelt die erlaubten Quell-Netze fuer die GUI - bitte an dein Netz anpassen.
-Dann den Listen-Port 7000 in `/etc/httpd/conf/httpd.conf` aktivieren:
+Die erlaubten Quell-Netze fuer die GUI werden in PHP durchgesetzt (`ip_guard.php`) und
+ueber `config.json` -> `access_control.allowed_networks` gesteuert. Sie sind direkt im GUI
+unter **Einstellungen -> Zugriffsbeschraenkung** bearbeitbar (CIDR, z.B. `192.168.10.0/24`).
+Leere Liste = keine Beschraenkung; Loopback ist immer erlaubt. `port80-restrict.conf` laesst
+Port 80 daher offen (`Require all granted`) und ueberlaesst die Filterung der PHP-Ebene.
+
+Der Listen-Port fuer das PMS-Interface (PCS → Middleware, Default `7000`) liegt in der
+eigenen Datei `pms-listen.conf` (nicht in `httpd.conf`), damit ihn die GUI bzw.
+`pms-portctl` (Schritt 5b) automatisch umschreiben kann, ohne `Listen 80` zu beruehren.
+In `/etc/httpd/conf/httpd.conf` bleibt also nur:
 
 ```apache
 Listen 80
-Listen 7000
 ```
+
+Der Port muss mit dem VirtualHost in `pms-middleware.conf`, mit
+`middleware.pms_interface_port` in `config.json` und mit dem im PCS eingetragenen
+Verbindungs-Port uebereinstimmen. Danach Apache neu starten:
 
 ```bash
 sudo systemctl restart httpd
@@ -104,6 +132,30 @@ sudo chmod 4755 /usr/local/bin/fias-ctl
 
 > **Hinweis:** Bei aktiviertem SELinux schlaegt der SUID-Aufruf aus Apache heraus fehl.
 > Entweder eine SELinux-Policy bauen oder SELinux deaktivieren (`setenforce 0`, dann `SELINUX=disabled` in `/etc/selinux/config`).
+
+### 5b. SUID-Hilfsbinary fuer GUI-Portumstellung (pms-portctl)
+
+Ermoeglicht das Aendern des PMS-Interface-Ports (PCS → Middleware) direkt in der GUI.
+Beim Speichern in **Einstellungen → ProCentric Server** ruft `api.php` dieses Binary auf:
+Es schreibt `Listen` (`pms-listen.conf`) **und** den VirtualHost-Port
+(`pms-middleware.conf`) um, validiert mit `apachectl configtest` und laedt httpd neu
+(`systemctl reload httpd`). Schlaegt der `configtest` fehl, wird automatisch
+zurueckgerollt. Der GUI-Port 80 wird dabei nie angefasst (kein Aussperren moeglich).
+
+```bash
+cd deploy/pms-portctl
+gcc -O2 -o pms-portctl pms-portctl.c
+sudo cp pms-portctl /usr/local/bin/
+sudo chown root:root /usr/local/bin/pms-portctl
+sudo chmod 4755 /usr/local/bin/pms-portctl
+```
+
+Der Port wird strikt validiert (nur Ziffern, 1024–65535). Ohne dieses Binary bleibt das
+GUI-Feld funktionsfaehig, aber der Apache-Listen-Port muss dann manuell angepasst werden.
+
+> **SELinux:** Wie bei `fias-ctl` muss SELinux deaktiviert oder per Policy erlaubt sein.
+> Zusaetzlich braucht `httpd` bei aktiviertem SELinux fuer **jeden** neuen Port ein Label,
+> z.B. `sudo semanage port -a -t http_port_t -p tcp <port>`.
 
 ### 6. Cron fuer taeglichen Resync
 
@@ -146,7 +198,7 @@ Das Live-Log unten zeigt alle ein- und ausgehenden Events farbcodiert. Klick auf
 
 ## Sicherheit
 
-- GUI-Zugriff per `port80-restrict.conf` auf Admin-Netze begrenzen.
+- GUI-Zugriff per **Einstellungen -> Zugriffsbeschraenkung** (config.json `access_control.allowed_networks`) auf Admin-Netze begrenzen.
 - `.htaccess` schuetzt `config.json`, `*.log`, `*.pid`, interne PHP-Dateien sowie `data/` und `logs/` vor direktem Zugriff.
 - Die `config.json` enthaelt PCS-Credentials - **nicht** ins Repo einchecken (steht in `.gitignore`).
 
@@ -170,9 +222,10 @@ Das Live-Log unten zeigt alle ein- und ausgehenden Events farbcodiert. Klick auf
 |   +-- config.example.json # Konfigurationsvorlage
 +-- deploy/
     +-- systemd/fias-client.service
-    +-- apache/{pms-middleware.conf, port80-restrict.conf}
+    +-- apache/{pms-middleware.conf, port80-restrict.conf, pms-listen.conf}
     +-- cron/pms-middleware
-    +-- fias-ctl/fias-ctl.c   # SUID-Hilfsbinary
+    +-- fias-ctl/fias-ctl.c       # SUID-Hilfsbinary (FIAS-Dienststeuerung)
+    +-- pms-portctl/pms-portctl.c # SUID-Hilfsbinary (GUI-Portumstellung)
 ```
 
 ## Lizenz

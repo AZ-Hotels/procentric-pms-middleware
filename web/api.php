@@ -16,6 +16,10 @@ foreach ([__DIR__ . '/logs', __DIR__ . '/data'] as $dir) {
     if (!is_dir($dir)) mkdir($dir, 0755, true);
 }
 
+// IP-Zugriffsschutz (erlaubte Netze aus config.json) erzwingen
+require_once __DIR__ . '/ip_guard.php';
+ac_enforce_access($configFile);
+
 // --- Config helpers ---
 function loadConfig(): array {
     global $configFile;
@@ -306,11 +310,12 @@ switch ($action) {
 
     // === Connection Check (PCS calls our /check) ===
     case 'check_connection':
-        // Test if PCS can reach us by checking our own port 7000
+        // Test if PCS can reach us by checking our own PMS-interface port (config, default 7000)
         $config = loadConfig();
+        $pmsPort = (int)($config['middleware']['pms_interface_port'] ?? 7000);
         $ch = curl_init();
         curl_setopt_array($ch, [
-            CURLOPT_URL            => 'http://127.0.0.1:7000/api/pms/v2/statuses',
+            CURLOPT_URL            => "http://127.0.0.1:{$pmsPort}/api/pms/v2/statuses",
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 5,
             CURLOPT_CONNECTTIMEOUT => 3,
@@ -346,7 +351,10 @@ switch ($action) {
 
     // === Get Config ===
     case 'get_config':
-        echo json_encode(loadConfig());
+        $cfg = loadConfig();
+        // Aktuelle Client-IP nicht-persistent mitliefern (GUI-Aussperr-Warnung)
+        $cfg['_client_ip'] = $_SERVER['REMOTE_ADDR'] ?? '';
+        echo json_encode($cfg);
         break;
 
     // === Save Config ===
@@ -356,9 +364,84 @@ switch ($action) {
             exit;
         }
         unset($input['action']);
+
+        // PMS-Interface-Port: alten Wert merken, um Apache nur bei Aenderung umzustellen
+        $oldCfg  = loadConfig();
+        $oldPort = (int)($oldCfg['middleware']['pms_interface_port'] ?? 7000);
+        $newPort = (int)($input['middleware']['pms_interface_port'] ?? $oldPort);
+
         saveConfig($input);
         apiLog('OUT', 'CONFIG', 'Konfiguration gespeichert', json_encode($input));
-        echo json_encode(['success' => true, 'message' => 'Konfiguration gespeichert']);
+
+        $msg = 'Konfiguration gespeichert.';
+        if ($newPort !== $oldPort && $newPort >= 1024 && $newPort <= 65535) {
+            // Apache-Listen/VHost via SUID-Helfer umstellen (configtest-geschuetzt, Rollback im Helfer)
+            $out = [];
+            $rc  = 1;
+            exec('/usr/local/bin/pms-portctl ' . (int)$newPort . ' 2>&1', $out, $rc);
+            $portOut = trim(implode("\n", $out));
+            if ($rc === 0) {
+                apiLog('OUT', 'APACHE', "PMS-Port {$oldPort} -> {$newPort} umgestellt", $portOut);
+                $msg = "Konfiguration gespeichert. Apache-Port auf {$newPort} umgestellt (httpd neu geladen).";
+            } else {
+                // Apache wurde im Helfer zurueckgerollt -> Port in der Config ebenfalls zuruecksetzen,
+                // damit config.json und Apache konsistent bleiben (uebrige Aenderungen bleiben erhalten)
+                $input['middleware']['pms_interface_port'] = $oldPort;
+                saveConfig($input);
+                apiLog('IN', 'ERROR', "Apache-Portumstellung auf {$newPort} fehlgeschlagen (Rollback auf {$oldPort}): {$portOut}");
+                echo json_encode([
+                    'success' => false,
+                    'error'   => "Apache-Port konnte nicht auf {$newPort} umgestellt werden. Rollback auf {$oldPort}. Details: {$portOut}",
+                ]);
+                break;
+            }
+        }
+        echo json_encode(['success' => true, 'message' => $msg]);
+        break;
+
+    // === Aktive Apache-Zugriffsregeln auslesen (read-only Anzeige) ===
+    case 'acl_active':
+        $candidates = [
+            '/etc/httpd/conf.d/port80-restrict.conf',
+            '/etc/apache2/conf-enabled/port80-restrict.conf',
+            '/etc/apache2/sites-enabled/port80-restrict.conf',
+        ];
+        $file = null;
+        foreach ($candidates as $c) {
+            if (is_readable($c)) { $file = $c; break; }
+        }
+
+        $nets = [];
+        $open = false;
+        if ($file !== null) {
+            $content = file_get_contents($file);
+            foreach (preg_split('/\R/', $content) as $line) {
+                $t = trim($line);
+                if ($t === '' || $t[0] === '#') continue;
+                // "Require ip <a> <b> ..." (mehrere Adressen je Zeile moeglich)
+                if (preg_match('/^Require\s+ip\s+(.+)$/i', $t, $m)) {
+                    foreach (preg_split('/\s+/', trim($m[1])) as $addr) {
+                        if ($addr !== '') $nets[] = $addr;
+                    }
+                }
+            }
+            // Port 80 offen (keine IP-Sperre auf Apache-Ebene)?
+            if (empty($nets) && preg_match('/Require\s+all\s+granted/i', $content)) {
+                $open = true;
+            }
+        }
+
+        // PHP-Ebene: aktuell konfigurierte Liste aus config.json
+        $phpNets = loadConfig()['access_control']['allowed_networks'] ?? [];
+
+        echo json_encode([
+            'success'         => true,
+            'file'            => $file,
+            'apache_networks' => array_values(array_unique($nets)),
+            'apache_open'     => $open,
+            'php_networks'    => array_values(is_array($phpNets) ? $phpNets : []),
+            'client_ip'       => $_SERVER['REMOTE_ADDR'] ?? '',
+        ]);
         break;
 
     // === FIAS Status ===

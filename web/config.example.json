@@ -38,6 +38,13 @@
         "listen_port": 80,
         "log_max_entries": 500
     },
+    "access_control": {
+        "allowed_networks": [
+            "172.23.56.0/24",
+            "192.168.122.0/24",
+            "127.0.0.1/32"
+        ]
+    },
     "resync": {
         "enabled": true,
         "only_when_fias_down": true,

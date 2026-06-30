@@ -1,3 +1,8 @@
+<?php
+// IP-Zugriffsschutz (erlaubte Netze aus config.json) erzwingen
+require __DIR__ . '/ip_guard.php';
+ac_enforce_access(__DIR__ . '/config.json');
+?>
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -911,8 +916,8 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Port</label>
-                        <input type="number" id="cfg-pc-port" placeholder="60080">
+                        <label>PMS-Interface-Port</label>
+                        <input type="number" id="cfg-pc-pmsport" placeholder="7000">
                     </div>
                     <div class="form-group">
                         <label>SSL</label>
@@ -922,6 +927,8 @@
                         </select>
                     </div>
                 </div>
+                <!-- procentric.port (REST-Port des PCS, fest 60080) wird unsichtbar mitgefuehrt, damit die Erreichbarkeitspruefung (api.php) unveraendert funktioniert -->
+                <input type="hidden" id="cfg-pc-port" value="60080">
                 <div class="form-group">
                     <label>API Prefix</label>
                     <input type="text" id="cfg-pc-prefix" placeholder="/api/pms/v2">
@@ -950,6 +957,26 @@
                         <input type="number" id="cfg-mw-maxlog" placeholder="500">
                     </div>
                 </div>
+            </div>
+
+            <div class="config-section">
+                <h3>Zugriffsbeschr&auml;nkung (IP-Netze)</h3>
+                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">
+                    Nur diese Netze d&uuml;rfen auf die Web-GUI zugreifen. Leer = keine Beschr&auml;nkung.
+                    CIDR-Notation, z.B. <code>192.168.10.0/24</code> oder einzelne IP <code>10.0.0.5</code>.
+                </div>
+                <div id="aclActiveInfo" style="font-size:12px;margin-bottom:10px;padding:8px 10px;border-radius:6px;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);display:none;"></div>
+                <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+                    <table class="lang-table">
+                        <thead><tr><th>Netz / IP</th><th></th></tr></thead>
+                        <tbody id="aclTableBody"></tbody>
+                    </table>
+                </div>
+                <div style="margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:8px;">
+                    <input type="text" id="newAclNet" placeholder="z.B. 192.168.10.0/24" style="flex:1;padding:4px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;outline:none;" onkeydown="if(event.key==='Enter'){event.preventDefault();addAclRow();}">
+                    <button class="btn btn-secondary" onclick="addAclRow()" style="font-size:11px;padding:4px 10px;text-transform:none;">+ Hinzuf&uuml;gen</button>
+                </div>
+                <div id="aclClientIp" style="margin-top:6px;font-size:11px;color:var(--text-secondary);"></div>
             </div>
 
             <div class="config-section">
@@ -999,6 +1026,7 @@
                         <input type="text" id="newRoomNumber" placeholder="Zimmer" style="width:80px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;outline:none;">
                         <button class="btn btn-secondary" onclick="addRoomRow()" style="font-size:11px;padding:4px 10px;text-transform:none;flex:1;">+ Hinzuf&uuml;gen</button>
                         <button class="btn btn-secondary" onclick="refreshAllRoomStatuses()" id="roomStatusBtn" style="font-size:11px;padding:4px 10px;text-transform:none;flex:1;" title="Status &amp; Sprache aller Zimmer von PCS abrufen">&#x21bb; Status laden</button>
+                        <button class="btn btn-secondary" onclick="clearAllRooms()" id="roomsClearBtn" style="font-size:11px;padding:4px 10px;text-transform:none;flex:1;color:var(--danger,#e05a5a);" title="Alle Zimmer aus der Liste entfernen (wirksam nach Speichern)">&#x1f5d1; Alle l&ouml;schen</button>
                     </div>
                     <div id="roomsCount" style="margin-top:6px;font-size:11px;color:var(--text-secondary);"></div>
                 </div>
@@ -1070,6 +1098,8 @@
 let autoRefreshEnabled = true;
 let autoRefreshTimer = null;
 let logAutoScroll = true;
+let currentClientIp = '';
+let apacheAclNets = [];
 
 // --- Tabs ---
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1247,6 +1277,14 @@ async function loadConfig() {
         renderLangTable(fias.language_map || {});
         document.getElementById('cfg-mw-port').value = mw.listen_port || 80;
         document.getElementById('cfg-mw-maxlog').value = mw.log_max_entries || 500;
+        document.getElementById('cfg-pc-pmsport').value = mw.pms_interface_port || 7000;
+
+        const acl = cfg.access_control || {};
+        renderAclTable(acl.allowed_networks || []);
+        currentClientIp = cfg._client_ip || '';
+        const ipEl = document.getElementById('aclClientIp');
+        if (ipEl) ipEl.textContent = currentClientIp ? ('Ihre aktuelle IP: ' + currentClientIp) : '';
+        loadActiveAcl();
 
         const resync = cfg.resync || {};
         document.getElementById('cfg-resync-enabled').value = resync.enabled ? '1' : '0';
@@ -1282,6 +1320,10 @@ async function saveConfig() {
         middleware: {
             listen_port: parseInt(document.getElementById('cfg-mw-port').value) || 80,
             log_max_entries: parseInt(document.getElementById('cfg-mw-maxlog').value) || 500,
+            pms_interface_port: parseInt(document.getElementById('cfg-pc-pmsport').value) || 7000,
+        },
+        access_control: {
+            allowed_networks: getAclNetworksFromTable(),
         },
         resync: {
             enabled: document.getElementById('cfg-resync-enabled').value === '1',
@@ -1296,10 +1338,21 @@ async function saveConfig() {
         }
     };
 
+    // Aussperr-Schutz: warnen, wenn die eigene IP nicht (mehr) erlaubt ist
+    const nets = config.access_control.allowed_networks;
+    if (nets.length > 0 && currentClientIp &&
+        currentClientIp !== '127.0.0.1' && currentClientIp !== '::1' &&
+        !nets.some(n => ipInCidr(currentClientIp, n))) {
+        if (!confirm('Achtung: Ihre aktuelle IP ' + currentClientIp +
+            ' ist in keinem der erlaubten Netze enthalten. Wenn Sie speichern, sperren Sie sich möglicherweise selbst aus.\n\nTrotzdem speichern?')) {
+            return;
+        }
+    }
+
     try {
         const result = await apiCall('save_config', config);
         showResult('configResultBox', result.success,
-            result.success ? 'Konfiguration gespeichert!' : (result.error || 'Fehler beim Speichern')
+            result.message || (result.success ? 'Konfiguration gespeichert!' : (result.error || 'Fehler beim Speichern'))
         );
         refreshLogs();
     } catch (e) {
@@ -1444,6 +1497,139 @@ function addLangRow() {
     document.getElementById('newLangPcs').value = '';
 }
 
+// --- Access Control (IP-Netze) ---
+function aclRowHtml(net) {
+    return `<td><input type="text" value="${escapeHtml(net)}" data-acl-net style="width:100%;text-align:left;"></td>
+        <td><button class="del-btn" onclick="this.closest('tr').remove()" title="Entfernen">x</button></td>`;
+}
+
+function renderAclTable(nets) {
+    const tbody = document.getElementById('aclTableBody');
+    let html = '';
+    (nets || []).forEach(net => { html += `<tr>${aclRowHtml(net)}</tr>`; });
+    tbody.innerHTML = html;
+}
+
+function getAclNetworksFromTable() {
+    const nets = [];
+    document.querySelectorAll('#aclTableBody tr').forEach(tr => {
+        const v = tr.querySelector('input[data-acl-net]')?.value.trim();
+        if (v && !nets.includes(v)) nets.push(v);
+    });
+    return nets;
+}
+
+// Aktuell wirksame Apache-Regeln anzeigen (welche Netze haben jetzt Zugriff)
+async function loadActiveAcl() {
+    const box = document.getElementById('aclActiveInfo');
+    if (!box) return;
+    try {
+        const r = await apiCall('acl_active');
+        apacheAclNets = r.apache_networks || [];
+        if (apacheAclNets.length) {
+            const list = apacheAclNets.map(n => '<b>' + escapeHtml(n) + '</b>').join(', ');
+            box.innerHTML = '<div style="color:var(--accent-orange);font-weight:600;margin-bottom:4px;">'
+                + 'Aktuell wirksam (Apache &ndash; greift derzeit):</div>' + list
+                + ' <button class="btn btn-secondary" onclick="importApacheAcl()" '
+                + 'style="font-size:11px;padding:2px 8px;text-transform:none;margin-left:6px;">In Liste &uuml;bernehmen</button>'
+                + '<div style="margin-top:6px;color:var(--text-secondary);">Solange diese Apache-Regeln aktiv sind, '
+                + 'entscheidet Apache &uuml;ber den Zugriff &ndash; die Liste unten wirkt erst nach Umstellung der Apache-Conf.</div>';
+            box.style.display = 'block';
+        } else if (r.apache_open) {
+            box.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">Apache: Port 80 offen</span> '
+                + '&ndash; keine IP-Sperre auf Apache-Ebene. Es gilt ausschlie&szlig;lich die Liste unten (PHP).';
+            box.style.display = 'block';
+        } else {
+            box.style.display = 'none';
+        }
+    } catch (e) {
+        box.style.display = 'none';
+    }
+}
+
+// Aktive Apache-Netze in die editierbare Liste uebernehmen
+function importApacheAcl() {
+    const existing = getAclNetworksFromTable();
+    const tbody = document.getElementById('aclTableBody');
+    apacheAclNets.forEach(n => {
+        if (!existing.includes(n)) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = aclRowHtml(n);
+            tbody.appendChild(tr);
+            existing.push(n);
+        }
+    });
+}
+
+function addAclRow() {
+    const input = document.getElementById('newAclNet');
+    const net = input.value.trim();
+    if (!net) return;
+    if (getAclNetworksFromTable().includes(net)) { input.value = ''; return; }
+    const tbody = document.getElementById('aclTableBody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = aclRowHtml(net);
+    tbody.appendChild(tr);
+    input.value = '';
+}
+
+// Client-seitiger CIDR-Check (nur fuer die Aussperr-Warnung; IPv4 + IPv6)
+function ipInCidr(ip, cidr) {
+    cidr = (cidr || '').trim();
+    if (!cidr) return false;
+    if (cidr.indexOf('/') === -1) cidr += cidr.indexOf(':') !== -1 ? '/128' : '/32';
+    const [subnet, bitsStr] = cidr.split('/');
+    const bits = parseInt(bitsStr, 10);
+    const a = ipToBytes(ip), b = ipToBytes(subnet.trim());
+    if (!a || !b || a.length !== b.length) return false;
+    if (bits < 0 || bits > a.length * 8) return false;
+    let n = bits;
+    for (let i = 0; i < a.length; i++) {
+        if (n <= 0) break;
+        const m = n >= 8 ? 0xFF : (0xFF << (8 - n)) & 0xFF;
+        if ((a[i] & m) !== (b[i] & m)) return false;
+        n -= 8;
+    }
+    return true;
+}
+
+function ipToBytes(ip) {
+    ip = (ip || '').trim();
+    if (ip.indexOf(':') !== -1) return ipv6ToBytes(ip);
+    const parts = ip.split('.');
+    if (parts.length !== 4) return null;
+    const out = [];
+    for (const p of parts) {
+        const n = Number(p);
+        if (!/^\d+$/.test(p) || n < 0 || n > 255) return null;
+        out.push(n);
+    }
+    return out;
+}
+
+function ipv6ToBytes(ip) {
+    let head = ip, tail = '';
+    if (ip.indexOf('::') !== -1) {
+        const halves = ip.split('::');
+        if (halves.length > 2) return null;
+        head = halves[0]; tail = halves[1];
+    }
+    const hg = head ? head.split(':') : [];
+    const tg = tail ? tail.split(':') : [];
+    if (ip.indexOf('::') === -1 && hg.length !== 8) return null;
+    const missing = 8 - (hg.length + tg.length);
+    if (missing < 0) return null;
+    const groups = hg.concat(Array(ip.indexOf('::') !== -1 ? missing : 0).fill('0'), tg);
+    if (groups.length !== 8) return null;
+    const out = [];
+    for (const g of groups) {
+        if (!/^[0-9a-fA-F]{1,4}$/.test(g)) return null;
+        const v = parseInt(g, 16);
+        out.push((v >> 8) & 0xFF, v & 0xFF);
+    }
+    return out;
+}
+
 // --- Rooms Table ---
 function roomRowHtml(room) {
     return `<td><input type="text" value="${escapeHtml(room)}" data-room-id style="width:80px;text-align:center;font-weight:600;"></td>
@@ -1477,6 +1663,14 @@ function updateRoomsCount() {
     const n = document.querySelectorAll('#roomsTableBody tr').length;
     const el = document.getElementById('roomsCount');
     if (el) el.textContent = n + ' Zimmer in der Liste';
+}
+
+function clearAllRooms() {
+    const n = document.querySelectorAll('#roomsTableBody tr').length;
+    if (n === 0) return;
+    if (!confirm('Wirklich alle ' + n + ' Zimmer aus der Liste entfernen?\n\nWird erst nach "Speichern" dauerhaft uebernommen.')) return;
+    document.getElementById('roomsTableBody').innerHTML = '';
+    updateRoomsCount();
 }
 
 function addRoomRow() {

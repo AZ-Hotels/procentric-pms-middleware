@@ -10,6 +10,7 @@ web/logs/*
 
 # Compiled SUID helper
 deploy/fias-ctl/fias-ctl
+deploy/pms-portctl/pms-portctl
 
 # Editor / OS
 *.swp
