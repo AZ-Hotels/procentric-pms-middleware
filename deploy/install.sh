@@ -252,6 +252,13 @@ install -m 644 "${SCRIPT_DIR}/cron/pms-middleware" /etc/cron.d/pms-middleware
 ok "/etc/cron.d/pms-middleware (Checkout 11:00 / Checkin 11:30, in config.json steuerbar)"
 
 # ---------------------------------------------------------------------------
+# 8b. Logrotate fuer /var/www/html/logs/*.log
+# ---------------------------------------------------------------------------
+step "Logrotate einrichten"
+install -m 644 "${SCRIPT_DIR}/logrotate/pms-middleware" /etc/logrotate.d/pms-middleware
+ok "/etc/logrotate.d/pms-middleware (taeglich, 14 Tage, gzip, copytruncate)"
+
+# ---------------------------------------------------------------------------
 # 9. Firewall (firewalld)
 # ---------------------------------------------------------------------------
 # Minimal-ISO hat firewalld aktiv. Port 80 (GUI) und PMS-Interface-Port oeffnen.
