@@ -536,7 +536,24 @@ switch ($action) {
         $maxLines = (int)($_GET['max'] ?? 200);
         $entries = [];
         if (file_exists($logFile)) {
-            $lines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            $size = filesize($logFile);
+            // Nur das Dateiende einlesen (2 MB reichen fuer >>200 Eintraege) -
+            // vermeidet OOM/500 bei stark angewachsener api.log
+            $readLen = (int)min($size, 2 * 1024 * 1024);
+            $chunk = '';
+            if ($readLen > 0) {
+                $fp = fopen($logFile, 'rb');
+                if ($fp) {
+                    fseek($fp, -$readLen, SEEK_END);
+                    $chunk = fread($fp, $readLen);
+                    fclose($fp);
+                }
+                if ($size > $readLen) {
+                    $nl = strpos($chunk, "\n");
+                    if ($nl !== false) $chunk = substr($chunk, $nl + 1);
+                }
+            }
+            $lines = $chunk === '' ? [] : preg_split('/\R/', $chunk, -1, PREG_SPLIT_NO_EMPTY);
             $lines = array_slice($lines, -$maxLines);
             foreach ($lines as $line) {
                 $entry = json_decode($line, true);
